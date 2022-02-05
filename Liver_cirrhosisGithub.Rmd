@@ -1,0 +1,1971 @@
+---
+title: "Liver_cirrhosis"
+author: "2021-6-11"
+date: "2021/9/26"
+output: html_document
+---
+
+#加载Package
+```{r}
+library(tidyverse)
+library(tibble)
+library(openxlsx)
+library(dplyr)
+library(stringi)
+library(stringr)
+library(DESeq2)
+library(matrixStats)
+library(org.Hs.eg.db)
+library(limma)
+library(edgeR)
+library(airway)
+library(ggplot2)
+library(ggsci)
+library(ComplexHeatmap)
+library(pheatmap)
+library(AnnotationDbi)
+library(enrichplot)
+library(clusterProfiler)
+library(CLL)
+library(stats)
+library("pathview")
+library(PCAtools)
+library(IRanges)
+library(WGCNA)
+library(genefilter)
+library(readr)
+library(ggrepel)
+library(cowplot)
+library(ggthemes)
+library(ComplexHeatmap)
+library(ggpubr)
+library(tidyverse)
+library(ggboxplot)
+library(ggalluvial)
+install.packages("ggalluvial")
+BiocManager::install("ggboxplot")
+devtools::install_github("ggboxplot")
+```
+
+
+#加载数据
+```{r}
+Gene1 <- data.table::fread("./GSE89377.top.table.xls")
+Gene2 <- data.table::fread("./GSE139602.top.table.tsv")
+
+```
+
+##数据检查
+
+```{r}
+is.numeric(Gene1)
+is.character(Gene1)
+is.data.frame(Gene1)
+is.data.frame(Gene2)
+table(Gene1)
+table(Gene2)
+summary(Gene1)
+summary(Gene2)
+summarise(Gene1)
+summarise(Gene2)
+class(Gene1)
+class(Gene2)
+type(Gene1)
+type(Gene2)
+dim(Gene1)
+dim(Gene2)
+aggregate(Gene1)
+mode(Gene1)
+mode(Gene2)
+head(Gene1)
+tail(Gene2)
+```
+
+##数据的清洗
+
+```{r}
+rownames(Gene1)
+colnames(Gene1)
+
+
+Gene1 <- dplyr::select(Gene1, "ID","adj.P.Val" ,"logFC","Gene.symbol")%>%
+  rename("Gene_ID" = "ID")
+Gene1A <- Gene1
+dim(Gene1A)
+
+summary(stringi::stri_isempty(Gene1A[,Gene.symbol]))
+
+Gene1A1 <- Gene1A%>%dplyr::filter(!stringi::stri_isempty(Gene1A[,Gene.symbol])) 
+Gene1A12 <-  distinct(Gene1A1 , Gene.symbol, .keep_all = TRUE)
+#####Gene2数据清洗
+rownames(Gene2)
+colnames(Gene2)
+Gene2A <- dplyr::select(Gene2, "ID","adj.P.Val" ,"logFC","Gene.Symbol")%>% rename("Gene_ID" = "ID")
+
+dim(Gene2A)
+summary(is.na(Gene2A))
+summary(stringi::stri_isempty(Gene2A[,Gene.Symbol]))
+
+Gene2A1 <- Gene2A%>%dplyr::filter(!stringi::stri_isempty(Gene2A[,Gene.Symbol])) 
+dim(Gene2A1)
+summary(str_detect(Gene2A1[,Gene.Symbol] ,"---"))
+
+Gene2A1 <- Gene2A1 %>% dplyr::filter(!str_detect(Gene2A1[,Gene.Symbol],"---"))
+
+Gene2A1 <- Gene2A1%>% dplyr::mutate(Gene.Symbol = str_split(Gene.Symbol, '///',simplify = T)[,1])%>%
+  dplyr::distinct(Gene.Symbol, .keep_all = T)
+  
+dim(Gene2A1)
+
+```
+
+##绘制火山图
+###Gene1A2
+```{r}
+####Gene1A2数据格式的简单处理
+plot_data1 <- Gene1A12
+Gene1A12F <- Gene1A12 %>% dplyr::mutate(LogFC1 = -logFC)
+plot_data1F <- Gene1A12F
+plot_data1F <- plot_data1F %>% 
+  mutate(Plog = -log10(adj.P.Val) )%>% 
+  mutate(Type = if_else( adj.P.Val >0.05,'Stable',if_else(abs(LogFC1) < 0.5,'Stable',if_else(LogFC1 >=0.5,'up' , 'down'))))
+
+table(plot_data1F$Type)
+
+Gene1A12F <- Gene1A12 %>% dplyr::mutate(LogFC1 = -logFC)
+####ggplot2绘制火山图
+ggplot(plot_data1F,aes(x = LogFC1, y = Plog, color = Type)) +
+  geom_point() + 
+  theme_bw() +
+  xlim(-4,4) + 
+  scale_color_manual(values = c("green","grey60","red")) + 
+  geom_hline(yintercept =-log10(0.01),linetype = 3) +
+  geom_vline(xintercept =c(-1,1),linetype = 3) +
+  theme(legend.position = "none") +
+  annotate("text",x = 2.5,y = 15, label = "Cirrhosis up:453") +
+  annotate("text",x = -2.5,y = 15, label = "Cirrhosis down:270") +
+  labs(x = "log2(FC)", y = "FDR(BH adjust, -log10)")
+
+HuoShan1 <- "../Liver_cirrhosis/Tupian2022_2_2/GSE89377.tiff"
+ggsave(P, filename= "P.tiff", path =HuoShan1, device = "tiff", 
+       width = 2.8, height = 3,
+       dpi = 300, 
+       limitsize = FALSE)
+
+```
+
+###Gene2A1绘制火山图
+```{r}
+####Gene1A2数据格式的简单处理
+plot_data2 <- Gene2A1
+
+Gene2A1F <- Gene2A1 %>% dplyr::mutate(logFC1 = -logFC)
+plot_data2 <- Gene2A1F
+plot_data2 <- plot_data2 %>% 
+  mutate(Plog = -log10(adj.P.Val) )%>% 
+  mutate(Type = if_else( adj.P.Val >0.05,'Stable',if_else(abs(logFC1) < 0.5,'Stable',if_else(logFC1 >=0.5, 'up', 'down'))))
+
+table(plot_data2$Type)
+
+####ggplot2绘制火山图
+ggplot(plot_data2,aes(x = logFC, y = Plog, color = Type)) +
+  geom_point() + 
+  theme_classic() +
+  xlim(-4,4) + 
+  scale_color_manual(values = c("green","grey60","red")) + 
+  geom_hline(yintercept =-log10(0.01),linetype = 3) +
+  geom_vline(xintercept =c(-1,1),linetype = 3) +
+  theme(legend.position = "none") +
+  annotate("text",x = 2.5,y = 15, label = " Cirrhosis up:2573") +
+  annotate("text",x = -2.5,y = 15, label = " Cirrhosis down:1125") +
+  labs(x = "log2(FC)", y = "FDR(BH adjust, -log10)")
+```
+
+##绘制韦恩图
+```{r}
+#4. 计算两者的overlap并画韦恩图
+
+view(plot_data1F)
+view(plot_data2)
+plot_data2F <-  distinct(plot_data2 , Gene.Symbol, .keep_all = TRUE)
+g1Aup <- plot_data1F$Gene.symbol[plot_data1F$Type == "up"]
+g1Adown <- plot_data1F$Gene.symbol[plot_data1F$Type == "down"]
+g2Aup <- plot_data2F$Gene.Symbol[plot_data2F$Type == "up"]
+g2Adown <- plot_data2F$Gene.Symbol[ plot_data2F$Type == "down"]
+
+outVenn <- "../Liver_cirrhosis/TUPianA/TUPian.tiff"
+
+library(VennDiagram)
+
+venn.diagram(x= list(G1Down = g1Adown,G1Up = g1Aup,G2Down = g2Adown,G2Up = g2Aup), 
+             filename = outVenn, height = 450, width = 450,resolution =300, 
+             imagetype="tiff", col ="transparent", 
+             fill =c("cornflowerblue","green","yellow","darkorchid1"),
+             alpha = 0.5, 
+             cex = 0.45,fontface = "bold",
+             cat.col =c("darkblue", "darkgreen", "orange","darkorchid4"), 
+             cat.cex = 0.45, cat.dist = 0.07)
+
+#5. 写出到excel中
+outXlsx <- "../Liver_cirrhosis/Veenshuju/veenA.xlsx"
+
+
+bothUp <- intersect(plot_data1$Gene.symbol[plot_data1$Type == "up"],
+                    plot_data2$Gene.Symbol[plot_data2$Type == "up"])
+
+bothDown <- intersect(plot_data1$Gene.symbol[plot_data1$Type == "down"],
+                   plot_data2$Gene.Symbol[plot_data2$Type == "down"])
+
+out.data <- list(G1data = plot_data1$Gene.symbol,G2data = plot_data2$Gene.Symbol,
+                 BothUP = bothUp,BothDown = bothDown)
+write.xlsx(out.data,file = outXlsx)
+view(bothDown)
+```
+
+
+##富集分析
+```{r}
+####Package加载
+BiocManager::install("createkeggdb")
+
+library(createKeggdb)
+Create_kegg_db("hsa")
+dir.create("R_Library", recursive = T)
+install.packages("KEGG.db_3.2.3.tar.gz",
+                 repos = NULL,
+                 lib = "../Obesit_diabetes2021/R_Library")
+
+getwd()
+.libPaths("c:/R_lib")
+.libPaths()
+library(KEGG.db, lib = "C:/Program Files/R/R-4.1.0/library")
+library(org.Hs.eg.db)
+library(clusterProfiler)
+####数据的处理
+colnames(plot_data1)
+Gene1F <- dplyr::select(plot_data1F, Gene.symbol,logFC,Type)%>%
+  dplyr::filter(!plot_data1F$Type == "Stable")
+
+Gene2F <- dplyr::select(plot_data2, Gene.Symbol,logFC,Type)%>%
+  dplyr::filter(!plot_data2$Type == "Stable")
+
+####
+
+Entrzid1 = bitr(Gene1F$Gene.symbol,
+               fromType = "SYMBOL",
+               toType = "ENTREZID",
+               OrgDb = "org.Hs.eg.db")
+view(Entrzid1)
+view(Gene1F)
+gene1 <- Entrzid1$ENTREZID
+
+de_ego <- enrichGO(gene = gene1,
+                   OrgDb = "org.Hs.eg.db",
+                   keyType = "ENTREZID",
+                   ont = "ALL",
+                   qvalueCutoff = 0.05,
+                   pvalueCutoff = 0.05)
+view(de_ego)
+####可视化
+dotplot(de_ego,
+        font.size=11,
+        showCategory = 5,
+        color = "p.adjust",
+        split="ONTOLOGY")+
+  facet_grid(ONTOLOGY~., scale="free") +
+  scale_size(range=c(2, 5)) +
+  scale_y_discrete(labels=function(y)str_wrap(y,width = 40))
+
+cnetplot(de_ego ,
+         foldChange = Gene1F$logFC,
+         showCategory = 10,
+         circular = TRUE,
+         colorEdge = TRUE)
+install.packages("ggnewscale")
+
+library(ggnewscale)
+#KEGG富集分析
+view(gene1)
+de_kegg1 <- enrichKEGG(gene = gene1,
+                    organism = 'hsa',
+                    keyType = 'kegg',
+                    pAdjustMethod = 'fdr',
+                    qvalueCutoff = 0.05,
+                    pvalueCutoff = 0.05,
+                    use_internal_data = T)
+view(de_kegg1)
+####可视化
+barplot(de_kegg1, showCategory = 10)
+
+enrichplot::dotplot(de_ego, showCategory = 10)
+cnetplot(de_kegg1,
+         foldChange = Gene1F$logFC,
+         showCategory = 5,
+         node_label= 'all',
+         circular = TRUE,
+         colorEdge = TRUE)
+
+####总数居的富集分析
+colnames(Gene1F)
+Gene1F <-  dplyr::rename(Gene1F ,Gene.Symbol = Gene.symbol)
+FZ <- merge(Gene1F, Gene2F ,by = "Gene.Symbol")
+view(FZ)
+FZ <- openxlsx::read.xlsx("../Liver_cirrhosis/Veenshuju/VeenHqZ.xlsx")
+
+EntrzidZ = bitr(FZ$Gene.symbol,
+               fromType = "SYMBOL",
+               toType = "ENTREZID",
+               OrgDb = "org.Hs.eg.db")
+
+write.csv(EntrzidZ,"../Liver_cirrhosis/GNFJFXdata/JYMZ.csv")
+geneZ <- EntrzidZ$ENTREZID
+view(EntrzidZ)
+view(geneZ)
+de_egoZ <- enrichGO(gene = geneZ,
+                   OrgDb = "org.Hs.eg.db",
+                   keyType = "ENTREZID",
+                   ont = "ALL",
+                   qvalueCutoff = 0.05,
+                   pvalueCutoff = 0.05,
+                   minGSSize = 10,
+                   maxGSSize = 500,
+                   readable = F)
+
+view(de_egoZ)
+?enrichGO
+write.csv(de_egoZ@result,"../Liver_cirrhosis/GNFJFXdata/GUresult.csv")
+####可视化
+
+cnetplot(de_egoZ ,
+         showCategory = 5,
+         circular = TRUE,
+         colorEdge = TRUE)
+dotplot(de_egoZ,
+        font.size=11,
+        showCategory = 3,
+        color = "p.adjust",
+        split="ONTOLOGY")+
+  facet_grid(ONTOLOGY~., scale="free") +
+       scale_size(range=c(2, 5)) +
+  scale_y_discrete(labels=function(y)str_wrap(y,width = 40))
+
+dotplot(de_egoZ,
+        font.size=11,
+        showCategory = categorys,
+        color = "p.adjust",
+        split="ONTOLOGY")+
+  facet_grid(ONTOLOGY~., scale="free") +
+  scale_size(range=c(2, 4)) +
+  scale_y_discrete(labels=function(y)str_wrap(y,width = 40))
+P4 <- dotplot(de_egoZ,
+        font.size=20,
+        showCategory = categorys,
+        color = "p.adjust",
+        split="ONTOLOGY")+
+  facet_grid(ONTOLOGY~., scale="free") +
+  scale_size(range=c(2, 9)) +
+  scale_x_continuous(limits = c(0.01,0.121))+
+  scale_y_discrete(labels=function(y)str_wrap(y,width = 40))+
+  theme_bw() +
+  theme(axis.text.y = element_text(face = "bold", size = 12))+
+  theme(axis.text.x = element_text(face = "bold", size = 12))
+
+categorys <- c("astrocyte differentiation",                                              
+               "dendritic cell apoptotic process",                                     
+               "rimmunological synapse formation" , "immunological synapse formation",                                                          
+               "negative regulation of macrophage derived foam cell differentiation",
+               "establishment of lymphocyte polarity", "collagen-containing extracellular matrix",
+               "basement membrane","collagen trimer","blood microparticle","microfibril",
+               "extracellular matrix structural constituent","G protein-coupled receptor binding",
+               "dipeptidase activity","platelet-derived growth factor binding",
+               "transmembrane receptor protein kinase activity")
+
+#KEGG富集分析
+view( geneZ)
+de_keggZ<- enrichKEGG(gene = geneZ,
+                    organism = 'hsa',
+                    keyType = 'kegg',
+                    pAdjustMethod = "BH",
+                    qvalueCutoff = 0.05,
+                    pvalueCutoff = 0.05,
+                    use_internal_data = F)
+
+de_keggZ@result$Description
+write.csv(de_keggZ@result, "../Liver_cirrhosis/keggZ.CSV")
+view(de_keggZ)
+view(de_keggZ@result)
+KgR <- de_keggZ@result
+####可视化     
+cnetplot(de_keggZ,
+         showCategory = 10,
+         node_label= 'all',
+         circular = TRUE,
+         colorEdge = TRUE)
+view(de_keggZ)
+
+
+enrichplot::dotplot(de_keggZ,
+         showCategory = 5)
+
+
+dotplot(KEGG,
+        font.size=10,
+        showCategory = 10
+) +
+  scale_size(range=c(2, 5)) +
+  scale_y_discrete(labels=function(y)str_wrap(y,width = 40)) 
+#####应用ggplot2绘制Keegg-dotplot
+
+ZJKEgg <- data.table::fread("../Liver_cirrhosis/xinHub/ZJzzKeggdata.xls")
+library(ggplot2)
+
+ggplot(ZJKEgg, aes(Pvalue, Pathway))+
+  geom_point()+
+  geom_point(aes(size = Gene, color =-1*log10(Qvalue)))+
+  scale_color_gradient(low = "green", high = "red")+
+  labs(color = expression(-log[10](Qvalue)), size = "Gene", x = "Pvalue name", y = "Pathway name",
+       title = "Pathway enrichment")+
+  theme_bw()
+
+
+P3 <-ggplot(ZJKEgg, aes(GeneRatio, Pathway))+
+  theme(text=element_text(size=20,family="A", face = "bold"))+
+  geom_point(aes(size = Count, color = Pvalue))+
+  scale_color_gradient(low = "blue", high = "red")+
+  labs(color = expression(Pvalue), size = "Count", font.size = 25,x = "GeneRatio", y = "",
+       title = "")+
+  scale_size(range=c(2, 10)) +
+  scale_x_continuous(limits = c(0.025,0.098))+
+  scale_y_discrete(labels=function(y)str_wrap(y,width = 40))+
+  theme_bw() +
+  theme(axis.text.y = element_text(face = "bold", size = 12))+
+  theme(axis.text.x = element_text(face = "bold", size = 12))
+
+HuoShan1 <- "../Liver_cirrhosis/Tupian2022_2_2/GSE89377.tiff"
+ggsave(P3, filename= "P3.tiff", path =HuoShan1, device = "tiff", 
+       width = 6, height = 5.5,
+       dpi = 300, 
+       limitsize = FALSE)
+
+#####查看当前ggplot2默认字体
+theme_get()$text
+
+####查看Windows系统下的字体
+windowsFonts()
+#####修改字体格式
+p + theme(text = element_text(size = 16, family = "newroman"))
+
+
+
+
+####KEGGPathview此处有疑问
+library("pathview")
+view(gene_List)
+colnames(FZ)
+gene_List <- dplyr::select(FZ, logFC.x)%>%dplyr::rename(logFC = logFC.x)
+view(gene1)
+pathview(gene.data = gene1,
+         pathway.id = "hsa05222",
+         species = "hsa",
+         kegg.dir = "../Liver_cirrhosis/output",
+         limit = list(gene = max(abs(Gene1F$logFC)),cpd = 1))
+
+
+write.csv(de_kegg1@result, "../Liver_cirrhosis/output/KEEG.Pathway.CSV")
+######
+    
+view(IGT_T3cD_S_ES)
+view(gene9)
+view(de_kegg9 )
+pathview(gene.data = gene7,
+         pathway.id = "hsa05340",
+         species = "hsa",
+         kegg.dir = "../",
+         limit = list(gene= max(abs(IGT_T3cD_S_ES$logFC)),
+                      cpd = 1))     
+```
+
+###通过原始数据筛选绘制热图
+####数据的读入
+
+```{r}
+GeneB1 <- data.table::fread("../Liver_cirrhosis/Rawdata1/GSE89377_series_matrix.txt", skip = 56)
+GeneB2 <- data.table::fread("../Liver_cirrhosis/Rawdata1/GSE139602_series_matrix.txt",skip = 60)
+
+```
+
+###数据的清洗与合并
+```{r}
+colnames(GeneB1)
+
+GeneB1 <- dplyr::select(GeneB1 ,"ID_REF" ,"GSM2367554" ,"GSM2367555", "GSM2367556", "GSM2367557" ,"GSM2367558",
+  "GSM2367559" ,"GSM2367560" ,"GSM2367561",
+  "GSM2367562", "GSM2367563" ,"GSM2367564",
+ "GSM2367565", "GSM2367566","GSM2367587" ,"GSM2367588",
+  "GSM2367589" ,"GSM2367590" ,"GSM2367591",
+ "GSM2367592" ,"GSM2367593", "GSM2367594",
+  "GSM2367595" ,"GSM2367596" ,"GSM2367597",
+  "GSM2367598")
+
+GeneB1 <- dplyr::rename(GeneB1,ID =  ID_REF)
+
+view(GeneB1)
+colnames(GeneB2)
+GeneB2 <- dplyr::rename(GeneB2,Gene_ID =  ID_REF)
+GeneB2 <- dplyr::select(GeneB2 ,"Gene_ID","GSM4144550", "GSM4144551","GSM4144552" ,"GSM4144553", "GSM4144554"
+,"GSM4144555","GSM4144561", "GSM4144562", "GSM4144563"
+,"GSM4144564" ,"GSM4144565" ,"GSM4144566","GSM4144567", "GSM4144568" ,"GSM4144569","GSM4144570" ,"GSM4144571", "GSM4144572", "GSM4144573" ,"GSM4144574", "GSM4144575"
+,"GSM4144576" ,"GSM4144577", "GSM4144578", "GSM4144579", "GSM4144580")
+
+
+colnames(Gene1)
+view(Gene2)
+view(GeneB2)
+GeneB1 <- dplyr::rename(GeneB1, Gene_ID = ID)
+GeneB1A <- merge(Gene1, GeneB1, by = "Gene_ID")
+GeneB2 <- dplyr::rename(GeneB2, ID = Gene_ID)
+GeneB2A <- merge(Gene2, GeneB2, by = "ID")
+
+
+colnames(GeneB1A)
+GeneB1A<- dplyr::select(GeneB1A,"Gene.symbol" ,"GSM2367554" , "GSM2367555","GSM2367556" , "GSM2367557",  "GSM2367558", "GSM2367559" ,"GSM2367560", "GSM2367561" ,
+ "GSM2367562", "GSM2367563","GSM2367564",  "GSM2367565" , "GSM2367566" , "GSM2367587" , "GSM2367588" , "GSM2367589"  ,"GSM2367590" , "GSM2367591" ,"GSM2367592",  "GSM2367593" , "GSM2367594","GSM2367595","GSM2367596" ,"GSM2367597" ,"GSM2367598")
+
+colnames(GeneB2A)
+GeneB2A<- dplyr::select(GeneB2A,"Gene.Symbol","GSM4144550", "GSM4144551", "GSM4144552" ,"GSM4144553" , "GSM4144554",  "GSM4144555" ,"GSM4144561" , "GSM4144562" , "GSM4144563" 
+, "GSM4144564"  ,"GSM4144565" , "GSM4144566", "GSM4144567" , "GSM4144568" , "GSM4144569" , "GSM4144570","GSM4144571", "GSM4144572" , "GSM4144573" , "GSM4144574" , "GSM4144575" ,"GSM4144576" , "GSM4144577" , "GSM4144578" ,"GSM4144579"  ,"GSM4144580" )
+
+
+GeneC1 <- merge(plot_data1F, GeneB1A, by = "Gene.symbol")
+colnames(GeneC1)
+GeneC1A <- dplyr::select(GeneC1, "Gene.symbol",        "Type", "GSM2367554","GSM2367555","GSM2367556" 
+,"GSM2367557","GSM2367558","GSM2367559", "GSM2367560", "GSM2367561",  "GSM2367562","GSM2367563" , "GSM2367564",  "GSM2367565","GSM2367566","GSM2367587",  "GSM2367588", 
+"GSM2367589", "GSM2367590" , "GSM2367591","GSM2367592" , "GSM2367593","GSM2367594","GSM2367595","GSM2367596" , "GSM2367597","GSM2367598" )
+
+GeneC1A <- dplyr::filter(GeneC1A, !GeneC1A$Type == "Stable")
+
+view(plot_data2)
+view(GeneB2A)
+GeneB2A <- dplyr::rename(GeneB2A,Gene_ID = ID )
+GeneC2 <- merge(plot_data2, GeneB2A, by = "Gene.Symbol")
+colnames(GeneC2)
+GeneC2A <- dplyr::select(GeneC2, "Gene.Symbol","Type"       ,"GSM4144550","GSM4144551","GSM4144552", "GSM4144553",  "GSM4144554","GSM4144555","GSM4144561","GSM4144562",  "GSM4144563","GSM4144564","GSM4144565","GSM4144566" ,
+ "GSM4144567","GSM4144568","GSM4144569","GSM4144570",
+ "GSM4144571","GSM4144572","GSM4144573","GSM4144574",  "GSM4144575","GSM4144576","GSM4144577","GSM4144578" ,
+"GSM4144579","GSM4144580")
+
+GeneC2A <- dplyr::filter(GeneC2A, !GeneC2A$Type == "Stable")
+
+view(GeneC1A)
+view(GeneC2A)
+GeneC1A <- dplyr::distinct(GeneC1A, Gene.symbol, .keep_all = T)
+GeneC2A <- dplyr::distinct(GeneC2A, Gene.Symbol, .keep_all = T)
+
+GeneV <- openxlsx::read.xlsx("../Liver_cirrhosis/Veenshuju/VeenHqZ.xlsx",sheet = 1)
+
+GeneC2A <- dplyr::rename(GeneC2A, Gene.symbol = Gene.Symbol)
+
+GeneV1 <- merge(GeneV ,GeneC1A , by = "Gene.symbol")
+colnames(GeneV1)
+GeneV1 <- dplyr::select(GeneV1, - "Type")
+view(GeneV1)
+
+GeneV2 <- merge(GeneV ,GeneC2A , by = "Gene.symbol")
+
+GeneV2 <- dplyr::select(GeneV2, - "Type")
+view(GeneV2)
+view(GeneV1)
+```
+
+
+###GSE89377热图绘制
+
+```{r}
+####数据格式的简单处理
+GeneV1 <-column_to_rownames(GeneV1 , var = 'Gene.symbol')
+GeneV2 <-column_to_rownames(GeneV2, var = 'Gene.symbol')
+is.data.frame(GeneV1)
+
+#####创建plot_Cluster的data.frame
+view("GeneV1")
+colnames(GeneV1)
+rep("Normal",13)
+rep("Cirrhosis",12)
+Plot_cluster1 <- data.frame(Cluster = c("Normal","Normal" ,"Normal","Normal","Normal","Normal","Normal","Normal","Normal","Normal",
+"Normal","Normal","Normal","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis", "Cirrhosis","Cirrhosis","Cirrhosis"),Genesampel = c("GSM2367554", "GSM2367555","GSM2367556","GSM2367557","GSM2367558","GSM2367559",
+"GSM2367560","GSM2367561","GSM2367562","GSM2367563","GSM2367564", "GSM2367565","GSM2367566","GSM2367587","GSM2367588","GSM2367589", "GSM2367590","GSM2367591","GSM2367592","GSM2367593","GSM2367594",
+"GSM2367595","GSM2367596","GSM2367597","GSM2367598"))
+Plot_cluster1 <- column_to_rownames(Plot_cluster1 , var = "Genesampel")
+
+####数据标准化
+par(mar = c(8,3,3,3))
+boxplot(GeneV1,
+        outline = FALSE,
+        las = 2)
+library(limma)
+GeneV1N <- as.data.frame(normalizeBetweenArrays(GeneV1))
+par(mar = c(8,3,3,3))
+boxplot(GeneV1N)
+view(GeneV1N)
+GeneV1N <- scale(GeneV1) 
+GeneV2N <- scale(GeneV2)
+colnames(GeneV1N)
+
+view(Plot_cluster1)
+
+####绘制热图
+library(ComplexHeatmap)
+
+col_fun = circlize::colorRamp2(c(-3, -1, 0, 1.2, 1.4),
+                               c("cornflowerblue", "deepskyblue1", "white", "red2", "red"))
+
+ht1 = HeatmapAnnotation( Cluster = Plot_cluster1$Cluster,
+                         show_legend =T ,annotation_name_side = "left",
+               col = list(Cluster = c
+                        ("Normal" = "#20854EFF",
+                      "Cirrhosis"="#BC3C29FF")))
+
+Plot_cluster1$Cluster <- factor( Plot_cluster1$Cluster, levels =c("Normal","Cirrhosis"))
+view(GeneV1N)
+view(GeneV2N)
+Heatmap(GeneV1N,
+        col = col_fun,
+        ##column_km = 2,
+        column_split = Plot_cluster1$Cluster,
+        top_annotation = ht1,
+        row_names_side = c("left"),
+        show_row_dend = F,
+        show_column_dend = F,
+        cluster_columns = T,
+        cluster_rows = F,
+        row_names_gp = gpar(fontsize = 6),
+        heatmap_legend_param = list(title = "Z-score"),
+        show_column_names = T)
+
+P5 <- Heatmap(GeneV1N,
+              col = col_fun,
+              ##column_km = 2,
+              column_split = Plot_cluster1$Cluster,
+              top_annotation = ht1,
+              row_names_side = c("left"),
+              show_row_dend = T,
+              show_column_dend = T,
+              cluster_columns = T,
+              cluster_rows = T,
+              show_row_names = F,
+              row_names_gp = gpar(fontsize = 12),
+              heatmap_legend_param = list(title = "Z-score"),
+              show_column_names = F)
+
+
+HuoShan1 <- "../Liver_cirrhosis/Tupian2022_2_2/GSE89377.tiff"
+ggsave(P5, filename= "P5.tiff", path =HuoShan1, device = "tiff",width = 3, height = 3,
+       dpi = 300, 
+       limitsize = FALSE)
+```
+
+
+
+###GSE139602热图绘制
+
+```{r}
+#####创建plot_Cluster的data.frame
+colnames(GeneV2)
+rep("Normal",6)
+rep("Cirrhosis",20)
+Plot_cluster2 <- data.frame(Cluster = c("Normal","Normal" ,"Normal","Normal","Normal","Normal","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis",
+"Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis", "Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis"),Genesampel = c("GSM4144550", "GSM4144551", "GSM4144552","GSM4144553", "GSM4144554", "GSM4144555", "GSM4144561" ,"GSM4144562" ,"GSM4144563"
+, "GSM4144564" ,"GSM4144565", "GSM4144566"
+, "GSM4144567", "GSM4144568" ,"GSM4144569"
+, "GSM4144570" ,"GSM4144571" ,"GSM4144572"
+,"GSM4144573" ,"GSM4144574" ,"GSM4144575"
+,"GSM4144576" ,"GSM4144577" ,"GSM4144578"
+,"GSM4144579" ,"GSM4144580"))
+Plot_cluster2 <- column_to_rownames(Plot_cluster2 , var = "Genesampel")
+
+####数据标准化
+par(mar = c(8,3,3,3))
+boxplot(GeneV2,
+        outline = FALSE,
+        las = 2)
+library(limma)
+GeneV1N <- as.data.frame(normalizeBetweenArrays(GeneV1))
+par(mar = c(8,3,3,3))
+boxplot(GeneV1N)
+view(GeneV1N)
+GeneV1N <- scale(GeneV1N) 
+GeneV2N <- scale(GeneV2)
+colnames(GeneV1N)
+
+view(Plot_cluster2)
+view(GeneV2N)
+####绘制热图
+library(ComplexHeatmap)
+
+col_fun = circlize::colorRamp2(c(-3, -1, 0, 1.2, 1.4),
+                               c("cornflowerblue", "deepskyblue1", "white", "red2", "red"))
+
+ht1 = HeatmapAnnotation( Cluster = Plot_cluster2$Cluster,
+                         show_legend = ,annotation_name_side = "left",
+               col = list(Cluster = c
+                        ("Cirrhosis"="#BC3C29FF",
+                        "Normal" = "#20854EFF")))
+Plot_cluster2$Cluster <- factor( Plot_cluster2$Cluster, levels =c("Cirrhosis","Normal"))
+
+
+Heatmap(GeneV2N,
+        col = col_fun,
+        #column_km = 2,
+        column_split = Plot_cluster2$Cluster,
+        top_annotation = ht1,
+        row_names_side = c("left"),
+        show_row_dend = F,
+        show_column_dend = F,
+        cluster_columns = T,
+        cluster_rows = F,
+        row_names_gp = gpar(fontsize = 6),
+        heatmap_legend_param = list(title = "Z-score"),
+        show_column_names = T)
+Heatmap(GeneV2N,
+              col = col_fun,
+              ##column_km = 2,
+              column_split = Plot_cluster2$Cluster,
+              top_annotation = ht1,
+              row_names_side = c("left"),
+              show_row_dend = T,
+              show_column_dend = T,
+              cluster_columns = T,
+              cluster_rows = T,
+              show_row_names = F,
+              row_names_gp = gpar(fontsize = 12),
+              heatmap_legend_param = list(title = "Z-score"),
+              show_column_names = F)
+```
+
+
+
+###箱试图、小提琴图数据处理
+
+```{r}
+GeneS <- readRDS("../Liver_cirrhosis/Rawdata1/TCGA_example.RDS")
+view(GeneS)
+ colnames(GeneS )
+plot_dataS <- GeneS %>%select(Group, Mir23b)
+ ggplot(plot_dataS, aes(x = Group , y = Mir23b, fill = "Mir23b"))  + geom_boxplot()+
+  theme_classic()+
+  ggpubr::stat_compare_means(color = "red")+
+  ggsci::scale_fill_jco()+
+  theme (legend.position = "none")+
+  ylab("Mir23b Expression")
+####数据的初步整理
+ 
+GeneX <- data.table::fread("../Liver_cirrhosis/HUb/string_interactions_short.tsv_Radiality_top10 default node.csv") 
+ view(GeneX) 
+GeneX1 <- dplyr::select(GeneX, name)
+is.data.frame(GeneV1)
+
+
+GeneV1X <- rownames_to_column(GeneV1 ,var = "name")
+
+GeneX11 <- merge(GeneX1, GeneV1X, by = "name")
+
+
+GeneX11 <- column_to_rownames(GeneX11 , var = "name")
+GeneX11 <- t(GeneX11)
+is.data.frame(GeneX11)
+GeneX11 <- as.data.frame(GeneX11 )
+GeneX11<- rownames_to_column(GeneX11 , var = "name")
+write.xlsx(GeneX11 , file = "../Liver_cirrhosis/XiangShiTuShuju/GeneX11.xlsx")
+
+is.data.frame(GeneV2)
+
+GeneV2X <-rownames_to_column(GeneV2 ,var = "name")
+
+GeneX12 <- merge(GeneX1, GeneV2X, by = "name")
+
+
+GeneX12 <- column_to_rownames(GeneX12 , var = "name")
+GeneX12 <- t(GeneX12)
+GeneX12 <- as.data.frame(GeneX12 )
+GeneX12 <- rownames_to_column(GeneX12 , var = "name")
+write.xlsx(GeneX12 , file = "../Liver_cirrhosis/XiangShiTuShuju/GeneX12.xlsx")
+```
+
+
+####绘制箱试图、小提琴图
+
+```{r}
+Gene11 <- openxlsx::read.xlsx("../Liver_cirrhosis/XiangShiTuShuju/GeneX11.xlsx", sheet = 1)
+colnames(Gene11)
+
+
+plot_data11<- Gene11
+
+plot_data11$Group <- factor( plot_data11$Group, levels =c("Normal","Cirrhosis"))
+
+ 
+
+ggplot(plot_data11, aes(x = Group,y = ADAMTSL2,fill = "ADAMTSL2"))+
+  geom_violin()+
+  geom_boxplot(width = 0.3, notch = T)+
+  geom_jitter(width = 0.1)+
+  theme_classic()+
+  ggpubr::stat_compare_means(color = "red")+
+  ggsci::scale_fill_jco()+
+  theme (legend.position = "none")+
+  ylab("ADAMTSL2 Expression")
+
+#####总数居
+GeneXZ <- openxlsx::read.xlsx("../Liver_cirrhosis/XiangShiTuShuju/GeneXZ.xlsx", sheet = 1)
+
+
+
+plot_dataXZ<- GeneXZ
+
+plot_dataXZ$Group <- factor( plot_dataXZ$Group, levels =c("Normal1","Cirrhosis1","Normal2","Cirrhosis2"))
+
+ 
+
+ggplot(plot_dataXZ, aes(x = Group,y = ADAMTSL2,fill = "ADAMTSL2"))+
+  geom_violin()+
+  geom_boxplot(width = 0.3, notch = T)+
+  geom_jitter(width = 0.1)+
+  theme_classic()+
+  ggpubr::stat_compare_means(color = "red")+
+  ggsci::scale_fill_jco()+
+  theme (legend.position = "none")+
+  ylab("ADAMTSL2 Expression")
+colnames(plot_dataXZ)
+
+
+#####新型Boxplot图
+
+P <-ggboxplot(plot_dataXZ, x = "Group", y = "ADAMTSL2",
+          color = "Group", palette ="npg",
+          add = "jitter", shape = "Group")
+
+my_comparisons <- list(c("Normal1", "Cirrhosis1"), c("Normal2", "Cirrhosis2")) 
+P+stat_compare_means(comparisons = my_comparisons)+stat_compare_means(label.y=14)
+```
+
+
+
+#####总韦恩图的绘制
+
+
+```{r}
+#4. 计算两者的overlap并画韦恩图
+GeneW <-data.table::fread('../Liver_cirrhosis/WGCNA/Shuju/modul.csv')
+colnames(GeneW)
+GeneZW <- openxlsx::read.xlsx("../Liver_cirrhosis/Veenshuju/VeenZD.xlsx",sheet = 1,rowNames = F)
+view(GeneZW )
+colnames(GeneZW)
+
+G <- GeneZW $GeneSymbol
+W <- GeneZW $Gene.symbol
+
+
+outVenn <- "../Liver_cirrhosis/TUPian1.tiff"
+
+library(VennDiagram)
+
+venn.diagram(x= list(G = G ,W = W), 
+             filename = outVenn, height = 450, width = 450,resolution =300, 
+             imagetype="tiff", col ="transparent", 
+             fill =c("green","yellow"),
+             alpha = 0.5, 
+             cex = 0.45,fontface = "bold",
+             cat.col =c( "darkgreen", "orange"), 
+             cat.cex = 0.45, cat.dist = 0.07)
+
+#5. 写出到excel中
+outXlsx <- "../Liver_cirrhosis/Veenshuju/veen.xlsx"
+
+bothUp <- intersect(plot_data1$Gene.symbol[plot_data1$Type == "up"],
+                    plot_data2$Gene.Symbol[plot_data2$Type == "up"])
+
+bothDown <- intersect(plot_data1$Gene.symbol[plot_data1$Type == "down"],
+                   plot_data2$Gene.Symbol[plot_data2$Type == "down"])
+
+out.data <- list(G1data = plot_data1$Gene.symbol,G2data = plot_data2$Gene.Symbol,
+                 BothUP = bothUp,BothDown = bothDown)
+write.xlsx(out.data,file = outXlsx)
+view(bothDown)
+```
+
+####免疫相关分析
+
+
+```{r}
+####加载代码
+source("../Liver_cirrhosis/Cibersort.R")
+
+GeneZZ <- data.table::fread("../Liver_cirrhosis/exprZ.xls")
+
+GeneZCY <- openxlsx::read.xlsx("../Liver_cirrhosis/Veenshuju/VeenHqZ.xlsx", sheet = 1, rowNames = F)%>%as.data.frame()
+View(GeneZCY )
+GeneZCY <- dplyr::rename(GeneZCY, Gene_sambol = Gene.symbol)
+
+
+GeneZZ1 <-merge(GeneZCY,GeneZZ , by = "GeneSymbol", all.x = T)
+write.table(GeneZZ1, file = "../Liver_cirrhosis/GeneZZ.txt", sep = "\t",row.names = F, col.names = T, quote = F)
+GeneZZ1 <- data.table::fread( "../Liver_cirrhosis/GeneZZ.txt", sep = "\t",row.names = T, col.names = T, quote = F)
+Result1 <- CIBERSORT('LM22.txt','GeneZZ.txt', perm = 1000, QN = T)
+#####正确
+ExpressZ <- 10^exprZZ
+view(exprZZ)
+view(ExpressZ )
+GeneZZ1 <-merge(GeneZCY,ExpressZ , by = "Gene_sambol", all.x = T)
+
+ExpressZ <- rownames_to_column(ExpressZ, var = "Gene_sambol")
+write.table(GeneZZ1, file = "../Liver_cirrhosis/ExpressZ .txt", sep = "\t",row.names = F, col.names = T, quote = F)
+Result1 <- CIBERSORT('LM22.txt','ExpressZ .txt', perm = 1000, QN = T)
+```
+
+
+####免疫细胞数据绘图
+
+```{r}
+plot.info <- data.table::fread("../Liver_cirrhosis/CIBERSORT-Results.txt")
+library(ggpubr)
+
+####数据格式的简单处理
+plot.info1 <-column_to_rownames(plot.info , var = 'Mixture')
+colnames(plot.info)
+rownames(plot.info1)
+
+#####创建plot_Cluster的data.frame
+
+rep("Normal",13)
+rep("Cirrhosis",12)
+Plot_clusterM <- data.frame(Cluster = c("Normal","Normal" ,"Normal","Normal","Normal","Normal","Normal","Normal","Normal","Normal",
+"Normal","Normal","Normal","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis", "Cirrhosis","Cirrhosis","Cirrhosis","Normal","Normal" ,"Normal","Normal","Normal","Normal","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis",
+"Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis", "Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis"),Genesampel = c("GSM2367554", "GSM2367555","GSM2367556","GSM2367557","GSM2367558","GSM2367559",
+"GSM2367560","GSM2367561","GSM2367562","GSM2367563","GSM2367564", "GSM2367565","GSM2367566","GSM2367587","GSM2367588","GSM2367589", "GSM2367590","GSM2367591","GSM2367592","GSM2367593","GSM2367594",
+"GSM2367595","GSM2367596","GSM2367597","GSM2367598","GSM4144550", "GSM4144551", "GSM4144552","GSM4144553", "GSM4144554", "GSM4144555", "GSM4144561" ,"GSM4144562" ,"GSM4144563"
+, "GSM4144564" ,"GSM4144565", "GSM4144566"
+, "GSM4144567", "GSM4144568" ,"GSM4144569"
+, "GSM4144570" ,"GSM4144571" ,"GSM4144572"
+,"GSM4144573" ,"GSM4144574" ,"GSM4144575"
+,"GSM4144576" ,"GSM4144577" ,"GSM4144578"
+,"GSM4144579" ,"GSM4144580"))
+view(Plot_clusterM )
+Plot_clusterM <- column_to_rownames(Plot_clusterM , var = "Genesampel")
+view(Plot_clusterM )
+view(plot.info1)
+colnames(plot.info1)
+
+plot.info1 <- dplyr::select(plot.info1,-c("P-value","Correlation","RMSE"))
+plot.info1M <-t(plot.info1)
+view(plot.info1M )
+####数据标准化
+par(mar = c(8,3,3,3))
+boxplot(GeneV1,
+        outline = FALSE,
+        las = 2)
+library(limma)
+GeneV1N <- as.data.frame(normalizeBetweenArrays(GeneV1))
+par(mar = c(8,3,3,3))
+boxplot(GeneV1N)
+
+plot.info1MS <- scale(plot.info1M) 
+
+
+
+view(Plot_cluster1)
+view(plot.info1)
+is.matrix(plot.info1M)
+plot.info1M <-as.matrix(plot.info1)
+####绘制热图
+library(ComplexHeatmap)
+
+col_fun = circlize::colorRamp2(c(-0.5, -0.02, 0, 0.15, 2),
+                               c("cornflowerblue", "deepskyblue1", "white", "red2", "red"))
+
+ht1 = HeatmapAnnotation( Cluster = Plot_clusterM$Cluster,
+                         show_legend = ,annotation_name_side = "left",
+               col = list(Cluster = c
+                        ("Normal" = "#20854EFF",
+                      "Cirrhosis"="#BC3C29FF")))
+view(Plot_clusterM)
+Plot_clusterM$Cluster <- factor( Plot_clusterM$Cluster, levels =c("Normal","Cirrhosis"))
+view(plot.info1M)
+Heatmap(plot.info1MS,
+        col = col_fun,
+        ##column_km = 2,
+        column_split = Plot_clusterM$Cluster,
+        top_annotation = ht1,
+        row_names_side = c("left"),
+        show_row_dend = T,
+        show_column_dend = T,
+        cluster_columns = T,
+        cluster_rows = F,
+        row_names_gp = gpar(fontsize = 11),
+        heatmap_legend_param = list(title = "Z-score"),
+        show_column_names = T)
+
+Heatmap(plot.info1MS,
+        col = col_fun,
+        ##column_km = 2,
+        column_split = Plot_clusterM$Cluster,
+        top_annotation = ht1,
+        row_names_side = c("right"),
+        show_row_dend = T,
+        show_column_dend = T,
+        cluster_columns = T,
+        cluster_rows = T,
+        row_names_gp = gpar(fontsize = 8.5),
+        heatmap_legend_param = list(title = "Z-score"),
+        show_column_names = F)
+
+
+```
+
+
+
+####数据宽表窄表的切换
+
+```{r}
+library(reshape2)
+view(plot.info1)
+sum(ncol(plot.info1))
+plot.info13 <- cbind(plot.info1,Plot_clusterM)
+plot.info13 <- dplyr::rename(plot.info13, Type = Cluster)
+
+colnames(plot.info1)
+plot.info12 <- rownames_to_column(plot.info13, var = "Sambol")
+
+view(plot.info12)
+write.csv(plot.info12, "../Liver_cirrhosis/LM221/plot.info12.csv")
+plot.info12 <-data.table::fread("../Liver_cirrhosis/LM221/plot.info12.csv")
+
+
+ colnames( plot.info12)
+ view(plot.info12)
+ 
+plot.info12 <- dplyr::select(plot.info12, -c("P-value", "Correlation","RMSE"))
+colnames(plot.info12)
+
+
+ aq1 <- melt(plot.info12, id.vars = c("Sambol","Type"),
+           variable.name = "CellType",
+         Value.name = "Value")
+ 
+ GeneZ <- column_to_rownames(GeneZZ1, var = "Gene_sambol")
+ GeneZ <- t(GeneZ)
+ GeneZ1 <- log10(GeneZ)
+ is.data.frame(GeneZ1)
+ 
+ GeneZ1 <-as.data.frame(GeneZ1)
+ 
+ GeneZ1 <-rownames_to_column(GeneZ1, var = "Sambol")
+ 
+ aq2 <- melt(GeneZ1)
+ head(aq2)
+ 
+  aq2 <- melt( GeneZ1, id.vars = c("Sambol"),
+           variable.name = "GeneType",
+           value.name = "GeneValue")
+ Zb <- cbind(GeneZ1, plot.info12)
+ 
+ write.csv( Zb, "../Liver_cirrhosis/LM221/Zb.csv")
+ Zb1 <- data.table::fread("../Liver_cirrhosis/LM221/Zb.csv")
+ 
+ aqz <- melt(Zb1,id.vars = c("Sambol","P-value","Correlation","RMSE","Type"))
+ 
+ view(aqz)
+ head( aqz )
+aqz <- melt( Zb1, id.vars = c("Sambol","P-value","Correlation","RMSE","Type"),
+           variable.name = "CellType",
+         Value.name = "Value")
+ Plot_clusterMS <- rownames_to_column(Plot_clusterM, var = "sambol ")
+ 
+ qz <- cbind(aq1, aq2)
+ 
+ qz <- merge(aq1, aq2, by = "Sambol", all = T)
+ view(qz)
+ 
+ summary( qz)
+ tail( qz)
+
+#####样本及基因表达的数据清理
+
+```
+
+#####绘图
+
+```{r}
+library(ggpubr)
+library(ggplot2)
+
+#####所有免疫细胞在所有样本中的比例
+ggboxplot(aq1,
+ x = "CellType",
+  y = "value",
+ color = "black",
+ fill = "CellType",
+ xlab = "",
+ ylab = "Cell composition",
+ main = "TME Cell composition") +
+ theme_base() +
+ theme(axis.text.x = element_text(angle = 90,hjust =1,
+                                 vjust = 1))
+
+####比较不同组织之间免疫细胞的差异
+ggplot(aq1, aes(x = CellType, y = value))+ 
+  labs(y="Cell composition",x= NULL,title = "")+  
+  geom_boxplot(aes(fill = Type),position=position_dodge(0.1),width=0.6,outlier.alpha = 0)+ 
+  scale_fill_manual(values = c("#FF3333", "#009933"))+
+  theme_classic() +  mytheme +
+  stat_compare_means(aes(group = Type),
+                     label = "p.signif", ###"(p.format)
+                     method = "t.test",
+                     hide.ns = T,
+                     size = 4,
+                     label.y = 1.0,
+                     label.x = 1,
+                     angle = 0)
+summary(aq1)
+summary(table(aq1$Sambol))
+#####进一步重复分析
+p1 <-ggstripchart(aq1,x="CellType",y="value",
+                  color="Type",
+                  #   fill="drv",
+                  palette="nejm",shape=21,size=2,
+                  ylab = "Cell composition",
+                  add= "mean_sd",# one of “none”, “reg.line”, “loess”
+                  add.params=list(color="Type",fill="NA"),
+               
+                  # error.plot="crossbar"
+                  
+                  #   label="drv",
+                  # font.label = list(size=14,face="italic",color="black"),
+                  # label.select="r",
+                  #repel=T,
+                  #label.rectangle=T,
+                  jitter=0.5,
+                  position=position_jitterdodge(),
+                  ggtheme=theme_bw())+
+  stat_compare_means(method = "t.test",
+                     ref.group = ".all.",hide.ns = T, size = 2, angle = 80,
+                     label.x = 0, label.y = 0.5 )+
+  stat_compare_means(aes(label = "p.format"), label.y = 0.5, size = 2.5,label.x = 2)+
+  scale_y_continuous(limits = c(-0.1,0.3))                     
+C1 <- p1 + rotate_x_text(angle = 60, hjust = 1, vjust = 1)
+
+
+scale_x_(breaks = seq(from=0,to=8,by=1))+
+
+library(eoffice) 
+topptx(figure = C1,  filename = "../Liver_cirrhosis/TUPianA/Cell2.pptx")
+?scale_x_continuous  
+?  stat_pvalue_manual
+?stat_compare_means
+?ggstripchart
+?xlim = (ylab = `05.Normalization`)
+my_comparisons <- list(c("Normal", "Cirrhosis"))
+comparisons = my_comparisons
+
+
+
+
+####不同细胞在各个样本中的比例差异
+sample.index <-
+ hclust(dist(aq1[, "value"]), method = "ward.D")$order
+view(sample.index )
+ sample.order <- aq1$Sambol[sample.index]
+ 
+library(ggplot2) 
+ library(ggpubr)
+ ggbarplot(aq1,
+           x = "Sambol",
+           y = "Type",
+           size = 0,
+           fill = "CellType",
+           color = "CellType",
+           order = sample.order) +
+           theme_base() +
+           theme(axis.text.x = element_text(
+           angle = 90,
+           hjust = 1,
+           vjust = 1,
+           size = 1),
+           legend.position = "bottom" )
+
+
+##### 
+ ggboxplot(aq1,x = "CellType",y = "value",
+          color = "black",fill = "Type",
+          xlab = "",ylab = "Cell composition",
+          main = "") +
+          stat_compare_means(label = "p.format",
+          method = "t.test",
+          ref.group = ".all.",hide.ns = T,
+          size = 2.5,label.y = 0.41,label.x = 1,angle = 65)+
+  stat_compare_means(label.y = c(0.45,0.45), label.x = 1.5, size = 2.5)+
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 90,hjust = 1,vjust = 1))
+
+my_comparisons <- list( c("Normal", "Cirrhosis"))
+ 
+view(aq1)
+
+#####小提琴图和泡泡图
+
+ 
+  
+my_comparisons <- list(c("Normal", "Cirrhosis"))
+comparisons = my_comparisons,
+ 
+ #####绘制相关性图
+ library(eoffice) 
+write.csv(aq1, "../Liver_cirrhosis/LM221.txt/aq1.csv")
+
+aq12<- data.table::fread("../Liver_cirrhosis/LM221/aq1.csv")
+view(aq12)
+aq12<- dplyr::select(aq12, -c(V1, value))
+
+ggplot(data= aq12, aes(x=Type,y= CellType,label=P))+
+      geom_tile(aes(fill= P.log),colour="white")+
+      scale_fill_gradient2(low="darkgreen",
+                           mid="yellow",
+                           midpoint=2,high="red")+
+      geom_text(size = 3) +
+      theme(axis.text.x=element_text(size=10,
+                        angle = 45,
+                        vjust = 1,hjust = 1),
+            axis.text.y=element_text(size=10),
+            axis.title=element_blank(),
+            axis.ticks= element_blank(),
+            text = element_text(size =10)+
+            labs(fill = "-log(P)") )
+
+is.numeric(aq12$value)
+ggsave(filename = "./Out/Clinical_correlation_v1.pdf",
+       plot = p,width = 8,height = 7)
+
+
+
+```
+
+
+
+
+
+```{r}
+
+```
+
+
+#####免疫相关系数计算绘图
+
+```{r}
+
+QZ <- dplyr::select(qz , -c("P-value",Sambol,Correlation,RMSE))
+colnames(QZ)
+view(QZ)
+
+colnames(ZB1)
+
+ZB1 <-dplyr::select(Zb1, -c("P-value",Correlation, RMSE))
+view(ZB1)
+
+# 定义要分析的变量（可以非常多，不限量）
+
+
+gene_con <- c("AADAT","ABCA1", "ABCC9","ACSL5", "ACSS1","ACTB","ACTG1", "ADAMTSL2","ADRB2","AEBP1","AGL", "AKR1B10", "AKR1B15","AMHR2","ANKRD35", "ANTXR1","ANXA13" ,"ANXA4","AOX1","APBB3","APOL3","AQP1","ATP8B2","AVPR1A", "BACE2","BCL11A","BHLHE22","C15orf52","C1orf106","C1orf198","C5", "C7", "CACNA1H","CCDC146", "CCDC3","CCL19","CCL21","CCL23","CCL3","CCND1","CD151","CD24","CD48","CDH6", "CETP","CFHR3","CFL2", "CFTR","CHST9" ,"CITED4", "CLDN10","CLDN11" ,"CLDN7","CLEC1B" ,"CLEC4G","CLEC4M","CLIC6", "CNDP1","CNST" , "COBLL1","COL15A1","COL1A2","COL4A2", "COL6A2" ,"CRIP1","CSNK1G2" , "CXCL6","CYBRD1", "CYP2C19","CYP2D6" ,"DCAF11", "DCDC2","DEFB1","DEXI","DKK3", "DMD" ,"DMKN"  ,"DNAJB9" ,"DNAJC12" ,"DNASE1L3" ,"DTNA", "EFEMP1","EFEMP2" , "EGFLAM","EGFR", "ENPP5", "EPHA3","ERGIC3","FABP4", "FAM129B","FAM134B", "FAM150B" ,"FAM151A","FAM3B","FAM46A","FAP","FAT1","FBLN2","FBLN5" ,"FCN2", "FCN3","FITM1","FNIP2","FOLH1","FXYD2","GADD45G" , "GALK1", "GAS6","GCAT","GCH1","GCNT2" ,"GEM", "GFOD2"  ,"GFRA1", "GLS", "GLUD1" ,"GMNN" ,"GOLM1" ,"GPC3" ,"GPC4" ,"GPC6" ,"GSN" ,"HEY2","HIVEP1","HKDC1","HLA-A","HPR","HSD17B14", "ID3","IFI16","IFT88","IGFALS","IGFBP7" ,"IGSF3" ,"IL1RN","IRS2" ,"ITCH", "ITGB5","ITLN1", "JUND","KBTBD11","KCNAB1","KCNN2","KIAA1522","KLHL15"    ,"KRT23", "KRT7", "LAMA2","LAMC3", "LBH","LDOC1","LGALS3" ,"LGALS3BP","LGALS4", "LILRB5","LONP2","LRRC1","LRRFIP2" ,"LTBP4" ,"LUC7L3","LYVE1","MAN1C1","MARCO","MAT1A","MBNL2" , "MBNL3","MFAP4", "MICALL2","MMP7","MOXD1","MPV17"   ,"MT1B","MT1E" , "MT1F","MT1H","MT1M","MT1X","NAMPT"     ,"NCOR1","NFKBIA","NKD2","NR2F2","NR5A2","NUBPL","OIT3"  ,"OSBPL8" ,"PACSIN3","PALM2","PAPLN","PCDH20","PCOLCE2"  ,"PDGFRA","PDGFRB", "PECAM1","PEG3","PLAT","PLCXD3", "PLVAP", "PON1","PPARGC1A","PPP3R1","PRICKLE1","PSME4"   ,"PTGDS", "RABEPK","RAD21","RALGPS2","RBMS1","RCAN1","RCAN2","RELN", "RHOC", "RNASE1","RNF125","RNF19A","RORA","RTP4", "S100A10" ,"S100A4",  "S100A6","SAMD4A","SCRN1","SCTR","SDCBP2","SDHC","SEL1L3","SELM","SERPINE2","SFRP5","SGK3","SGMS2","SH3YL1","SLC13A5","SLC16A10","SLC1A1" , "SLC38A1", "SLC38A2","SLC39A14","SLCO2A1","SLFN11" ,"SLFN11","SLIT2" ,"SLITRK3", "SMOC1","SMOC2","SNAP25","SNRPN","SOCS2"     ,"SOX9","SPATA18","SPINT2","SPOCK2","SPON2","SREBF1","SSPN","ST14","ST3GAL6","STAB2","STMN2","STRN3" ,"STYX"      ,"SUCNR1", "SUSD2" , "SYBU", "SYT13","TAGLN","TAT", "TBC1D10C" ,"TCF4","TESC","THOP1","TMEM200A","TMPRSS3"   , "TMSB10", "TPM1","TPST1","TRIB1","TRIM22","TSHZ2","TSPAN7","TSPAN8","TTC36", "TYMS","UBR3","UPP1","USH2A","VIM" ,"VMO1","VSIG2","VTCN1","VWF","WDR13", "WEE1","ZBED5"    ,"ZCCHC6","ZMAT3","ZNF827","ZNF83", "ZRANB1", "ZYG11B"   , "B-cells-naive", "B-cells-memory","Plasma-cells","T_cells_CD8","T_cells_CD4_naive" ,"T_cells_CD4_memory_resting", "T_cells_CD4_memory_activated","T-cells-follicular-helper","T-cells-regulatory-Tregs", "T-cells-gamma_delta", "NK-cells-resting" ,"NK-cells-activated", "Monocytes", "Macrophages_M0","Macrophages_M1","Macrophages_M2", "Dendritic-cells-resting","Dendritic-cells-activated" ,"Mast-cells-resting","Mast-cells-activated","Eosinophils","Neutrophils"  )
+gene_cat <- c("Sambol","Type")
+clinical_con <- gene_con
+clinical_cat <- gene_cat
+survival <- c()
+
+
+# 批量进行相关分析，统计检验
+cli.mat.all <- clinical.matrix(ZB1,
+                               gene_cat = gene_cat,
+                               gene_con = gene_con,
+                               clinical_cat =          
+                               clinical_cat,
+                               clinical_con =        
+                               clinical_con)
+
+view(cli.mat.all)
+
+# 将计算之后的结果进行可视化供分析讨论
+plot.data <- cli.mat.all %>% filter(!is.na(p))
+plot.data$p <- round(plot.data$p,2)
+for(i in 1:nrow(plot.data)){
+  if(plot.data[i,"p.log"] >= 1.3 & plot.data[i,"p.log"]<3){
+    plot.data$p.log[i] = 3
+  }
+}
+# 清洗p值，只把p小于0.1的呈现出来，大于0.1的则设置为NA
+plot.data$p[plot.data$p > 0.1] <- NA
+plot.data <- plot.data %>%
+  mutate(clinical = factor(clinical,levels = c(clinical_con,clinical_cat),ordered = T),
+         gene = factor(gene,levels = c(gene_con,gene_cat),ordered = T))
+view(plot.data)
+# 画出热图
+ ggplot(data=plot.data,aes(x=clinical,y=gene,label=p))+
+      geom_tile(aes(fill=p.log),colour="white")+
+      scale_fill_gradient2(low="darkgreen",
+                           mid="yellow",
+                           midpoint=2,high="red")+
+      geom_text(size = 3) +
+      theme(axis.text.x=element_text(size=10,
+                                     angle = 45,
+                                     vjust = 1,hjust = 1),
+            axis.text.y=element_text(size=10),
+            axis.title=element_blank(),
+            axis.ticks= element_blank(),
+            text = element_text(size=10)) +
+      labs(fill = "-log(P)")
+ggsave(filename = "./Out/Clinical_correlation_v1.pdf",
+       plot = p,width = 8,height = 7)
+view(plot.data)
+```
+
+
+#####ssGSEA免疫浸润的代码实现
+
+```{r}
+devtools::install_github("xjsun1221/tinyarray")
+
+library(tinyarray)
+library(stringr)
+
+
+GeneZ2 <- column_to_rownames(GeneZ1, var = "Sambol")
+GeneZ2 <- t(GeneZ2 )
+view(GeneZ2)
+
+Group  = ifelse(str_detect(pd$title, "Control"),"contral","treat")
+
+Group = factor(Group, levels = c("control", "treat"))
+
+geneset <- rio::import("../Liver_cirrhosis/LM221/mmc3.xlsx", skip = 2)
+geneset <- split(geneset$Metagene, geneset$`Cell type`)
+
+view(geneset)
+lapply(geneset[1:3],head)
+
+library(GSVA)
+
+BiocManager::install("GSVA")
+
+re <- gsva(GeneZ2, geneset, method = "ssgsea",
+           mx.diff = FALSE, verbose = FALSE)
+view(re)
+library(ComplexHeatmap)
+ re2 <- as.data.frame(re)
+ 
+```
+
+
+####绘制免疫细胞和基因的相关热图
+
+```{r}
+Plot_clusterMM <- data.frame(Cluster = c("Normal","Normal" ,"Normal","Normal","Normal","Normal","Normal","Normal","Normal","Normal",
+"Normal","Normal","Normal","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis", "Cirrhosis","Cirrhosis","Cirrhosis","Normal","Normal" ,"Normal","Normal","Normal","Normal","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis",
+"Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis", "Cirrhosis","Cirrhosis","Cirrhosis","Cirrhosis"),Genesampel = c("GSM2367554", "GSM2367555","GSM2367556","GSM2367557","GSM2367558","GSM2367559",
+"GSM2367560","GSM2367561","GSM2367562","GSM2367563","GSM2367564", "GSM2367565","GSM2367566","GSM2367587","GSM2367588","GSM2367589", "GSM2367590","GSM2367591","GSM2367592","GSM2367593","GSM2367594",
+"GSM2367595","GSM2367596","GSM2367597","GSM2367598","GSM4144550", "GSM4144551", "GSM4144552","GSM4144553", "GSM4144554", "GSM4144555", "GSM4144561" ,"GSM4144562" ,"GSM4144563"
+, "GSM4144564" ,"GSM4144565", "GSM4144566"
+, "GSM4144567", "GSM4144568" ,"GSM4144569"
+, "GSM4144570" ,"GSM4144571" ,"GSM4144572"
+,"GSM4144573" ,"GSM4144574" ,"GSM4144575"
+,"GSM4144576" ,"GSM4144577" ,"GSM4144578"
+,"GSM4144579" ,"GSM4144580"))
+Plot_clusterMM <- column_to_rownames(Plot_clusterMM , var = "Genesampel")
+
+library(ComplexHeatmap)
+
+col_fun = circlize::colorRamp2(c(-3, -1, 0, 1.2, 1.4),
+                               c("cornflowerblue", "deepskyblue1", "white", "red2", "red"))
+
+ht1 = HeatmapAnnotation( Cluster = Plot_clusterMM$Cluster,
+                         show_legend = ,annotation_name_side = "left",
+               col = list(Cluster = c
+                        ("Normal" = "#20854EFF",
+                      "Cirrhosis"="#BC3C29FF")))
+Plot_clusterMM$Cluster <- factor( Plot_clusterMM$Cluster, levels =c("Normal","Cirrhosis"))
+
+
+Heatmap(re2,
+        col = col_fun,
+        #column_km = 2,
+        column_split = Plot_clusterMM$Cluster,
+        top_annotation = ht1,
+        row_names_side = c("left"),
+        show_row_dend = F,
+        show_column_dend = F,
+        cluster_columns = T,
+        cluster_rows = F,
+        row_names_gp = gpar(fontsize = 6),
+        heatmap_legend_param = list(title = "Z-score"),
+        show_column_names = T,
+        show_row_names = F)
+```
+
+
+
+
+####免疫细胞和基因表达的相关性
+
+```{r}
+
+GeneZ2
+
+geneset = rio::import("../Liver_cirrhosis/LM221/mmc3.xlsx",skip = 2)
+
+geneset <- split(geneset$Metagene, geneset$`Cell type`)
+
+lapply(geneset[1:3],head)
+
+library(GSVA)
+library(tinyarray)
+
+GeneZ2 <- as.data.frame(GeneZ2)
+view(GeneZ2)
+GeneZ2 <- rownames_to_column(GeneZ2, var = "gs")
+GeneZ2 <-column_to_rownames(GeneZ2 , var = "gs")
+re <- gsva(GeneZ2, geneset, method="ssgsea",
+           mx.diff=FALSE, verbose=FALSE)
+view(re)
+
+####计算相关P 值
+
+
+library(Hmisc)
+identical(colnames(re),colnames(GeneZ2))
+
+gs = c("AADAT","ABCA1","ABCC9","ACSL5","ACSS1","ACTB" ,       "ACTG1","ADAMTSL2","ADRB2","AEBP1","AGL","AKR1B10", "AKR1B15","AMHR2","ANKRD35","ANTXR1","ANXA13", "ANXA4"    ,"AOX1", "APBB3","APOL3","AQP1","ATP8B2","AVPR1A", "BACE2","BCL11A","BHLHE22","C15orf52","C1orf106","C1orf198","C5","C7","CACNA1H","CCDC146","CCDC3","CCL19", "CCL21","CCL23" ,"CCL3","CCND1","CD151","CD24",
+"CD48","CDH6","CETP","CFHR3","CFL2","CFTR","CHST9" ,"CITED4","CLDN10","CLDN11","CLDN7","CLEC1B","CLEC4G", "CLEC4M","CLIC6","CNDP1","CNST","COBLL1","COL15A1" , "COL1A2","COL4A2","COL6A2","CRIP1","CSNK1G2","CXCL6",   "CYBRD1","CYP2C19","CYP2D6","DCAF11","DCDC2","DEFB1",   "DEXI","DKK3","DMD","DMKN","DNAJB9","DNAJC12","DNASE1L3","DTNA","EFEMP1","EFEMP2","EGFLAM","EGFR","ENPP5","EPHA3","ERGIC3","FABP4","FAM129B","FAM134B","FAM150B","FAM151A","FAM3B","FAM46A","FAP","FAT1","FBLN2","FBLN5","FCN2","FCN3","FITM1","FNIP2","FOLH1","FXYD2","GADD45G","GALK1","GAS6","GCAT","GCH1","GCNT2","GEM","GFOD2","GFRA1","GLS",   "GLUD1","GMNN","GOLM1","GPC3","GPC4","GPC6","GSN","HEY2","HIVEP1","HKDC1","HLA-A","HPR","HSD17B14", "ID3",
+"IFI16","IFT88","IGFALS", "IGFBP7","IGSF3","IL1RN",
+"IRS2","ITCH","ITGB5","ITLN1","JUND","KBTBD11","KCNAB1"  ,"KCNN2","KIAA1522","KLHL15","KRT23","KRT7","LAMA2", "LAMC3","LBH","LDOC1","LGALS3","LGALS3BP","LGALS4",  "LILRB5","LONP2","LRRC1","LRRFIP2","LTBP4","LUC7L3", "LYVE1","MAN1C1", "MARCO","MAT1A", "MBNL2","MBNL3",   "MFAP4","MICALL2","MMP7","MOXD1","MPV17","MT1B","MT1E" , "MT1F","MT1H","MT1M","MT1X","NAMPT","NCOR1" ,
+"NFKBIA","NKD2","NR2F2","NR5A2","NUBPL","OIT3","OSBPL8", "PACSIN3","PALM2","PAPLN","PCDH20","PCOLCE2","PDGFRA" , "PDGFRB","PECAM1","PEG3","PLAT","PLCXD3","PLVAP",   "PON1","PPARGC1A","PPP3R1","PRICKLE1","PSME4","PTGDS",    "RABEPK","RAD21","RALGPS2","RBMS1","RCAN1","RCAN2",   "RELN","RHOC","RNASE1","RNF125","RNF19A","RORA","RTP4","S100A10","S100A4","S100A6","SAMD4A","SCRN1","SCTR", "SDCBP2","SDHC","SEL1L3","SELM","SERPINE2","SFRP5"  ,  "SGK3","SGMS2","SH3YL1","SLC13A5","SLC16A10","SLC1A1","SLC38A1","SLC38A2","SLC39A14","SLCO2A1","SLFN11","SLIT2"   ,"SLITRK3","SMOC1","SMOC2","SNAP25","SNRPN","SOCS2","SOX9","SPATA18","SPINT2","SPOCK2","SPON2","SREBF1","SSPN",  "ST14","ST3GAL6","STAB2", "STMN2", "STRN3","STYX",
+"SUCNR1","SUSD2","SYBU","SYT13","TAGLN","TAT","TBC1D10C" ,"TCF4","TESC","THOP1","TMEM200A","TMPRSS3","TMSB10", "TPM1","TPST1","TRIB1","TRIM22","TSHZ2","TSPAN7","TSPAN8" ,"TTC36","TYMS","UBR3","UPP1","USH2A","VIM","VMO1","VSIG2","VTCN1","VWF","WDR13","WEE1","ZBED5","ZCCHC6","ZMAT3", "ZNF827","ZNF83","ZRANB1","ZYG11B")
+
+
+GeneZ2 <-as.data.frame(GeneZ2)
+GeneZ21 <- rownames_to_column(GeneZ2, var = "gs")
+####
+ nc = t( rbind(re,GeneZ2[gs,]))
+
+nc[1:4,1:4]
+view(nc)
+m = rcorr(nc)$r[1:nrow(re),(ncol(nc)-length(gs)+1):ncol(nc)]
+
+m[1:4,1:4]
+p = rcorr(nc)$P[1:nrow(re),(ncol(nc)-length(gs)+1):ncol(nc)]
+
+p[1:4,1:4]
+view(p)
+```
+
+
+
+#####绘制免疫细胞和基因表达量的相关热图
+
+```{r}
+library(dplyr)
+library(pheatmap)
+tmp = matrix(case_when(p<0.01~"**",
+                       p<0.05~"*",
+                       T~""),nrow = nrow(p))
+source("modified_pheatmap.R")
+pheatmap(m,
+         display_numbers =tmp,
+         angle_col =45,
+         color = colorRampPalette(c("#92b7d1", "white", "#d71e22"))(100),
+         border_color = "white",
+         treeheight_col = 0,
+         treeheight_row = 0)
+
+######Complexheatmap
+
+col_fun = circlize::colorRamp2(c(-1, -0.5, 0, 0.5, 1),
+                               c("cornflowerblue", "deepskyblue1", "white", "red2", "red"))
+
+ht1 = HeatmapAnnotation( show_legend = T ,annotation_name_side = "left")
+M  <- t(m)
+View(m)
+Heatmap(m,
+        col = col_fun,
+        row_names_side = c("left"),
+        show_row_dend = F,
+        show_column_dend = F,
+        cluster_columns = T,
+        cluster_rows = F,
+        row_names_gp = gpar(fontsize = 6),
+        heatmap_legend_param = list(title = "Z-score"),
+        show_column_names = T,
+        show_row_names = F)
+
+
+write.csv(nc,"../Liver_cirrhosis/LM221/nc.csv")
+view(m)
+write.csv(m,"../Liver_cirrhosis/LM221/m.csv")
+write.csv(n,"../Liver_cirrhosis/LM221/n.csv")
+write.csv(p,"../Liver_cirrhosis/LM221/P.csv")
+
+```
+
+
+
+
+#####HUb基因免疫细胞及基因的表达量
+
+```{r}
+P1 <-t(p)
+M1 <- t(m)
+is.data.frame(M1)
+P1 <- as.data.frame(P1)
+M1 <- as.data.frame(M1)
+
+view(P1)
+view(M1)
+rownames(M1)
+M1 <- rownames_to_column(M1, var = "Gene")
+P1 <- rownames_to_column(P1, var = "Gene")
+
+HUb <- data.frame(Gene = c("PECAM1","CCND1","PDGFRA","SOX9","TAGLN","S100A4","ACTB","PDGFRB","COL1A2","VIM"))
+
+HUbP <- merge(HUb , P1, by = "Gene", all.x = T)
+HUbM <- merge(HUb , M1, by = "Gene", all.x = T)
+
+view(HUbP)
+view(HUbM)
+
+library(reshape2)
+
+qHp <- melt(HUbP)
+
+head(qHp)
+qHp <- melt(HUbP,
+            variable.name = "CellType",
+            value.name = "Pvalue")
+
+qHm <- melt(HUbM,
+            variable.name = "CellType",
+            value.name = "Cor")
+
+ZHC <- cbind(qHm, qHp)
+
+#####ZH <-ZHC%>% mutate(adjP = log10ZHC[,Pvalue])
+
+library(ggplot2)
+library(dplyr)
+library(readxl)
+
+data<-data.frame(ZHC) #构建dataframe
+data <- data %>% 
+    mutate(mycolor = ifelse(Cor>0, "UP", "Down"))  #判断，并分类以后续着色分别
+x<-data$CellType #提取dataframe得某个row为segment的向量。
+y<-data$Cor#同上
+data <- data %>% 
+    mutate(mycolor = ifelse(y>0, "UP", "Down"))
+# plot
+ggplot(data, aes(x=x, y=y)) +
+    geom_segment( aes(x=x, xend=x, y=0, yend=y, color=mycolor), size=5, alpha=0.9) +
+    theme_light() +
+    theme(legend.position = "Pvalue",panel.border = element_blank(),
+    ) +    xlab("Celltype") +    ylab("Cor")
+
+
+#####棒棒糖图
+ggplot(data, aes(x=x, y=y)) +
+    geom_segment( aes(x=x, xend=x, y=0, yend=y), color="red") +
+    geom_point( color="blue", size= 4, alpha=0.6) +
+    theme_light() +
+    coord_flip() +
+    theme(
+        panel.grid.major.y = element_blank(),
+        panel.border = element_blank(),
+        axis.ticks.y = element_blank()
+    )
+
+write.csv(ZHC, "../Liver_cirrhosis/LM221/ZHC.csv")
+
+library(ggpubr)
+
+ACTB <- data.table::fread("../Liver_cirrhosis/LM221/ZHCXGSJ/ACTB.xls")
+library(tidyverse)
+ACTB <- ACTB %>%dplyr::mutate(Direction = if_else( Cor >0,"Positive"  ,"Negative"))
+ACTB  <- ACTB  %>%dplyr::mutate(Cor1 = abs(Cor))
+
+ggdotchart(ACTB, x="CellType", y="Cor", color = "Direction", 
+           palette = c("#00AFBB", "#FC4E07"), 
+           sorting = "descending", add = "segment", 
+           add.params = list(color="lightgray", size=2), 
+           group = "Direction", dot.size = 6, label = round(ACTB$Cor, 1), 
+           font.label = list(color="white", size=9, vjust=0.5), 
+           title  = "ACTB",
+           rotate = TRUE,
+           x.text.col = TRUE,
+           ggtheme = theme_bw())+ geom_line(yintercept=0, linetype=2, color="lightgray")
+
+#####自己摸索出来的ACTB
+ggdotchart(ACTB, x="CellType", y="Cor", color = "Direction", 
+           size = "Cor1",
+           palette = c("#00AFBB", "#FC4E07"), 
+           sorting = "descending", add = "segment", 
+           add.params = list(color="Direction", size=1), 
+           group = "Direction", label = round(ACTB$Pvalue, 2),
+           font.label = list(size = 10 ,color = "red",face = "bold"), 
+           title  = "ACTB",
+           rotate = TRUE,
+           y.text.col = TRUE,
+           ggtheme = theme_classic())+ 
+  geom_line(yintercept=0, linetype=2, color="lightgray")
+
+#####VIM
+library(ggpubr)
+library(tidyverse)
+VIM<- data.table::fread("../Liver_cirrhosis/LM221/ZHCXGSJ/VIM.xls")
+
+
+VIM <- VIM %>%dplyr::mutate(Direction = if_else( Cor >0,"Positive"  ,"Negative"))
+VIM  <- VIM   %>%dplyr::mutate(Cor1 = abs(Cor))
+ggdotchart(VIM, x="CellType", y="Cor", color = "Direction", 
+           size = "Cor1",
+           palette = c("#00AFBB", "#FC4E07"), 
+           sorting = "descending", add = "segment", 
+           add.params = list(color="Direction", size=1), 
+           group = "Direction", label = round(VIM$Pvalue, 2),
+           font.label = list(size = 10 ,color = "red",face = "bold"), 
+           title  = "ACTB",
+           rotate = TRUE,
+           y.text.col = TRUE,
+           ggtheme = theme_classic())+ 
+  geom_line(yintercept=0, linetype=2, color="lightgray")
+#####COL1A2
+library(ggpubr)
+library(tidyverse)
+COL1A2<- data.table::fread("../Liver_cirrhosis/LM221/ZHCXGSJ/COL1A2.xls")
+
+
+COL1A2<- COL1A2%>%dplyr::mutate(Direction = if_else( Cor >0,"Positive"  ,"Negative"))
+COL1A2<- COL1A2  %>%dplyr::mutate(Cor1 = abs(Cor))
+ggdotchart(COL1A2, x="CellType", y="Cor", color = "Direction", 
+           size = "Cor1",
+           palette = c("#00AFBB", "#FC4E07"), 
+           sorting = "descending", add = "segment", 
+           add.params = list(color="Direction", size=1), 
+           group = "Direction", label = round(COL1A2$Pvalue, 2),
+           font.label = list(size = 10 ,color = "red",face = "bold"), 
+           title  = "COL1A2",
+           rotate = TRUE,
+           y.text.col = TRUE,
+           ggtheme = theme_classic())+ 
+  geom_line(yintercept=0, linetype=2, color="lightgray")
+
+
+
+#####PDGFRB
+library(ggpubr)
+library(tidyverse)
+PDGFRB<- data.table::fread("../Liver_cirrhosis/LM221/ZHCXGSJ/PDGFRB.xls")
+
+
+PDGFRB<- PDGFRB%>%dplyr::mutate(Direction = if_else( Cor >0,"Positive"  ,"Negative"))
+PDGFRB<- PDGFRB %>%dplyr::mutate(Cor1 = abs(Cor))
+ggdotchart(PDGFRB, x="CellType", y="Cor", color = "Direction", 
+           size = "Cor1",
+           palette = c("#00AFBB", "#FC4E07"), 
+           sorting = "descending", add = "segment", 
+           add.params = list(color="Direction", size=1), 
+           group = "Direction", label = round(PDGFRB$Pvalue, 2),
+           font.label = list(size = 10 ,color = "red",face = "bold"), 
+           title  = "PDGFRB",
+           rotate = TRUE,
+           y.text.col = TRUE,
+           ggtheme = theme_classic())+ 
+  geom_line(yintercept=0, linetype=2, color="lightgray")
+
+
+#####PDGFRA
+library(ggpubr)
+library(tidyverse)
+PDGFRA<- data.table::fread("../Liver_cirrhosis/LM221/ZHCXGSJ/PDGFRA1.xls")
+
+
+PDGFRA<- PDGFRA%>%dplyr::mutate(Direction = if_else( Cor >0,"Positive"  ,"Negative"))
+PDGFRA<- PDGFRA %>%dplyr::mutate(Cor1 = abs(Cor))
+ggdotchart(PDGFRA, x="CellType", y="Cor", color = "Direction", 
+           size = "Cor1",
+           palette = c("#00AFBB", "#FC4E07"), 
+           sorting = "descending", add = "segment", 
+           add.params = list(color="Direction", size=1), 
+           group = "Direction", label = round(PDGFRA$Pvalue, 2),
+           font.label = list(size = 10 ,color = "red",face = "bold"), 
+           title  = "PDGFRA",
+           rotate = TRUE,
+           y.text.col = TRUE,
+           ggtheme = theme_classic())+ 
+  geom_line(yintercept=0, linetype=2, color="lightgray")
+
+
+#####CCND1
+library(ggpubr)
+library(tidyverse)
+CCND1<- data.table::fread("../Liver_cirrhosis/LM221/ZHCXGSJ/CCND1.xls")
+
+
+CCND1<-CCND1%>%dplyr::mutate(Direction = if_else( Cor >0,"Positive"  ,"Negative"))
+
+CCND1<- CCND1 %>%dplyr::mutate(Cor1 = abs(Cor))
+ggdotchart(CCND1, x="CellType", y="Cor", color = "Direction", 
+           size = "Cor1",
+           palette = c("#00AFBB", "#FC4E07"), 
+           sorting = "descending", add = "segment", 
+           add.params = list(color="Direction", size=1), 
+           group = "Direction", label = round(CCND1$Pvalue, 2),
+           font.label = list(size = 10 ,color = "red",face = "bold"), 
+           title  = "CCND1",
+           rotate = TRUE,
+           y.text.col = TRUE,
+           ggtheme = theme_classic())+ 
+  geom_line(yintercept=0, linetype=2, color="lightgray")
+
+
+#####SOX9
+library(ggpubr)
+library(tidyverse)
+SOX9<- data.table::fread("../Liver_cirrhosis/LM221/ZHCXGSJ/SOX9.xls")
+
+
+SOX9<-SOX9%>%dplyr::mutate(Direction = if_else( Cor >0,"Positive"  ,"Negative"))
+
+SOX9<- SOX9 %>%dplyr::mutate(Cor1 = abs(Cor))
+ggdotchart(SOX9, x="CellType", y="Cor", color = "Direction", 
+           size = "Cor1",
+           palette = c("#00AFBB", "#FC4E07"), 
+           sorting = "descending", add = "segment", 
+           add.params = list(color="Direction", size=1), 
+           group = "Direction", label = round(SOX9$Pvalue, 2),
+           font.label = list(size = 10 ,color = "red",face = "bold"), 
+           title  = "SOX9",
+           rotate = TRUE,
+           y.text.col = TRUE,
+           ggtheme = theme_classic())+ 
+  geom_line(yintercept=0, linetype=2, color="lightgray")
+
+
+#####PECAM1
+library(ggpubr)
+library(tidyverse)
+PECAM1<- data.table::fread("../Liver_cirrhosis/LM221/ZHCXGSJ/PECAM1.xls")
+
+
+PECAM1<-PECAM1%>%dplyr::mutate(Direction = if_else( Cor >0,"Positive"  ,"Negative"))
+PECAM1<- PECAM1%>%dplyr::mutate(Cor1 = abs(Cor))
+
+ggdotchart(PECAM1, x="CellType", y="Cor", color = "Direction", 
+           size = "Cor1",
+           palette = c("#00AFBB", "#FC4E07"), 
+           sorting = "descending", add = "segment", 
+           add.params = list(color="Direction", size=1), 
+           group = "Direction", label = round(PECAM1$Pvalue, 2),
+           font.label = list(size = 10 ,color = "red",face = "bold"), 
+           title  = "PECAM1",
+           rotate = TRUE,
+           y.text.col = TRUE,
+           ggtheme = theme_classic())+ 
+  geom_line(yintercept=0, linetype=2, color="lightgray")
+
+
+#####TAGLN
+library(ggpubr)
+library(tidyverse)
+TAGLN<- data.table::fread("../Liver_cirrhosis/LM221/ZHCXGSJ/TAGLN.xls")
+
+
+TAGLN<-TAGLN%>%dplyr::mutate(Direction = if_else( Cor >0,"Positive"  ,"Negative"))
+TAGLN<- TAGLN%>%dplyr::mutate(Cor1 = abs(Cor))
+
+ggdotchart(TAGLN, x="CellType", y="Cor", color = "Direction", 
+           size = "Cor1",
+           palette = c("#00AFBB", "#FC4E07"), 
+           sorting = "descending", add = "segment", 
+           add.params = list(color="Direction", size=1), 
+           group = "Direction", label = round(TAGLN$Pvalue, 2),
+           font.label = list(size = 10 ,color = "red",face = "bold"), 
+           title  = "TAGLN",
+           rotate = TRUE,
+           y.text.col = TRUE,
+           ggtheme = theme_classic())+ 
+  geom_line(yintercept=0, linetype=2, color="lightgray")
+
+
+#####S100A4
+library(ggpubr)
+library(tidyverse)
+S100A4<- data.table::fread("../Liver_cirrhosis/LM221/ZHCXGSJ/S100A4.xls")
+
+
+S100A4<-S100A4%>%dplyr::mutate(Direction = if_else( Cor >0,"Positive"  ,"Negative"))
+S100A4<- S100A4%>%dplyr::mutate(Cor1 = abs(Cor))
+
+ggdotchart(S100A4, x="CellType", y="Cor", color = "Direction", 
+           size = "Cor1",
+           palette = c("#00AFBB", "#FC4E07"), 
+           sorting = "descending", add = "segment", 
+           add.params = list(color="Direction", size=1), 
+           group = "Direction", label = round(S100A4$Pvalue, 2),
+           font.label = list(size = 10 ,color = "red",face = "bold"), 
+           title  = "S100A4",
+           rotate = TRUE,
+           y.text.col = TRUE,
+           ggtheme = theme_classic())+ 
+  geom_line(yintercept=0, linetype=2, color="lightgray")
+
+
+#####自己摸索出来的CBL
+library(ggpubr)
+library(ggplot2)
+library(dplyr)
+library(readxl)
+
+data <- data %>%dplyr::mutate(Direction = if_else( Cor >0,"Positive"  ,"Negative"))
+data <- data %>%dplyr::mutate(Cor1 = abs(Cor))
+ggdotchart(data, x="CellType", y="Cor", color = "Direction", 
+           size = abs(data$Cor),
+           palette = c("#00AFBB", "#FC4E07"), 
+           sorting = "descending", add = "segment", 
+           add.params = list(color="Direction", size=1), 
+           group = "Direction", label = round(data$P, 2),
+           font.label = list(size = 8 ,color = "red",face = "bold"), 
+           title  = "CBL",
+           rotate = TRUE,
+           y.text.col = TRUE,
+           ggtheme = theme_base())+ 
+  geom_line(yintercept=0, linetype=2, color="lightgray")
+```
+
+
+
+
+#####最终HUb基因小提琴图
+
+```{r}
+#####总数居
+GeneXZ <- openxlsx::read.xlsx("../Liver_cirrhosis/ZuiZhongXiangShiTuShuJu/GeneXZ.xlsx", sheet = 1)
+
+
+
+plot_dataXZ<- GeneXZ
+
+plot_dataXZ$Group <- factor( plot_dataXZ$Group, levels =c("Normal1","Cirrhosis1","Normal2","Cirrhosis2"))
+
+ 
+
+ggplot(plot_dataXZ, aes(x = Group,y = ACTB,fill = "ACTB"))+
+  geom_violin()+
+  geom_boxplot(width = 0.3, notch = T)+
+  geom_jitter(width = 0.1)+
+  theme_classic()+
+  ggpubr::stat_compare_means(color = "red")+
+  ggsci::scale_fill_jco()+
+  theme (legend.position = "none")+
+  ylab("ACTB Expression")
+colnames(plot_dataXZ)
+
+#####新式Boxplot图
+P <-ggboxplot(plot_dataXZ, x = "Group", y = "S100A4",
+          color = "Group", palette ="PNG",
+          add = "jitter", shape = "Group")
+
+my_comparisons <- list(c("Normal1", "Cirrhosis1"), c("Normal2", "Cirrhosis2")) 
+P+stat_compare_means(comparisons = my_comparisons)+stat_compare_means(label.y=12.5)
+
+
+P <-ggboxplot(plot_dataXZ, x = "Group", y = "SOX9",
+              color = "Group", palette ="tiff",
+              add = "jitter", shape = "Group")+
+              ylim(4,11)
+            
+
+my_comparisons <- list(c("Normal1", "Cirrhosis1"), c("Normal2", "Cirrhosis2")) 
+P9 <-P+stat_compare_means(comparisons = my_comparisons)+stat_compare_means(label.y=10.7)
+
+HuoShan1 <- "../Liver_cirrhosis/Tupian2022_2_2/GSE89377.tiff"
+ggsave(P9, filename= "P9.tiff", path =HuoShan1, device = "tiff", 
+       width = 4.5, height = 3,
+       dpi = 300, 
+       limitsize = FALSE)
+
+```
+
+
+
+#####免疫细胞和总基因Circal热图
+
+```{r}
+library(circlize)
+
+HeatmaPC <- data.table::fread("../Liver_cirrhosis/LM221/m.csv")
+
+HeatmaPC <- column_to_rownames(HeatmaPC, var = "V1")
+HeatmaPC <-t(HeatmaPC)
+is.data.frame(HeatmaPC)
+HeatmaPC <-as.data.frame(HeatmaPC )
+
+dim(HeatmaPC)
+summary(HeatmaPC )
+
+col_fun2 = colorRamp2(c(-1,-0.5,0,0.5,1),
+  c("#339933","#FFFF00","#FFFFCC","#FF6600","#FF0000"))
+
+circos.par("track.height" = 0.1)
+circos.initialize(HeatmaPC$sectors, x = HeatmaPC$x)
+
+circos.heatmap(HeatmaPC,
+               col = col_fun2,
+               rownames.side = "outside",
+               rownames.cex = 1,
+               cluster = F)
+
+circos.clear()
+```
+
+
+
+#####Upset图
+
+```{r}
+Upsetdata <- data.table::fread("../Liver_cirrhosis/xinHub/Upset.xls")
+View(Upsetdata)
+library(UpSetR)
+library(lapply)
+install.packages("UpSetR")
+install.packages("lapply")
+BiocManager::install("lapply")
+devtools::install_github("lapply")
+
+d <- column_to_rownames(Upsetdata, var = "V1")
+d1 <- t(d)
+d1 <- as.data.frame(d1)
+is.numeric(d)
+is.character(d)
+is.factor(d)
+class(d)
+type(d)
+
+view(d)
+d1<-as.data.frame(lapply(d1,as.numeric))
+
+upset(d1,  #数据集
+      nsets = 5, #集合数量，也可用set参数指定具体集合
+      nintersects = 30, #呈现的交集数
+
+      
+      text.scale = 2,
+      mb.ratio = c(0.5, 0.5),  #点图和条形图的比例
+      order.by = c("freq", "degree"), #交集如何排序。这里先根据freq，然后根据degree
+      decreasing = c(TRUE,FALSE), #是否逆序
+      sets.bar.color ="orchid1", #左下方条形图颜色
+      main.bar.color ="royalblue" #右上方条形图颜色
+)
+```
+
